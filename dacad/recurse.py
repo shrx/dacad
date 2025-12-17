@@ -21,8 +21,8 @@ import mutagen
 import tqdm
 import unidecode
 
-import sacad
-from sacad import COVER_SOURCE_CLASSES, colored_logging, tqdm_logging
+import dacad
+from dacad import COVER_SOURCE_CLASSES, colored_logging, tqdm_logging
 
 EMBEDDED_ALBUM_ART_SYMBOL = "+"
 AUDIO_EXTENSIONS = frozenset(
@@ -70,7 +70,7 @@ class Work:
         )
 
 
-def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, full_scan=False, all_formats=False):
+def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, full_scan=False):
     """Recursively analyze library, and return a list of work."""
     work = []
     stats = collections.OrderedDict((k, 0) for k in ("files", "albums", "missing covers", "errors"))
@@ -86,7 +86,6 @@ def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, full_scan=Fals
                 cover_pattern,
                 ignore_existing=ignore_existing,
                 full_scan=full_scan,
-                all_formats=all_formats,
             )
             progress.set_postfix(stats, refresh=False)
             progress.update(1)
@@ -191,7 +190,7 @@ def pattern_to_filepath(pattern, parent_dir, metadata):
 
 
 def analyze_dir(
-    stats, parent_dir, rel_filepaths, cover_pattern, *, ignore_existing=False, full_scan=False, all_formats=False
+    stats, parent_dir, rel_filepaths, cover_pattern, *, ignore_existing=False, full_scan=False
 ):
     """Analyze a directory (non recursively) and return a list of Work objects."""
     r = []
@@ -213,7 +212,7 @@ def analyze_dir(
     if audio_filepaths and (not dir_metadata):
         # failed to get any metadata for this directory
         stats["errors"] += 1
-        logging.getLogger("sacad_r").error(f"Unable to read metadata for album directory {parent_dir!r}")
+        logging.getLogger("dacad_r").error(f"Unable to read metadata for album directory {parent_dir!r}")
 
     for metadata, album_audio_filepaths in dir_metadata.items():
         # update stats
@@ -222,15 +221,7 @@ def analyze_dir(
         # add work item if needed
         if cover_pattern != EMBEDDED_ALBUM_ART_SYMBOL:
             cover_filepath = pattern_to_filepath(cover_pattern, parent_dir, metadata)
-            if all_formats:
-                missing = ignore_existing or (
-                    not any(
-                        os.path.isfile(f"{os.path.splitext(cover_filepath)[0]}.{ext}")
-                        for ext in sacad.SUPPORTED_IMG_FORMATS
-                    )
-                )
-            else:
-                missing = ignore_existing or (not os.path.isfile(cover_filepath))
+            missing = ignore_existing or (not os.path.isfile(cover_filepath))
         else:
             cover_filepath = EMBEDDED_ALBUM_ART_SYMBOL
             missing = (not metadata.has_embedded_cover) or ignore_existing
@@ -287,20 +278,16 @@ def ichunk(iterable, n):
 
 async def download(args, cover_filepath, work, stats, progress):
     try:
-        status = await sacad.search_and_download(
+        status = await dacad.search_and_download(
             work.metadata.album,
             work.metadata.artist,
             args.format,
-            args.size,
             cover_filepath,
-            size_tolerance_prct=args.size_tolerance_prct,
             source_classes=args.cover_sources,
-            preserve_format=args.preserve_format,
-            convert_progressive_jpeg=args.convert_progressive_jpeg,
         )
     except Exception as exception:
         stats["errors"] += 1
-        logging.getLogger("sacad_r").error(
+        logging.getLogger("dacad_r").error(
             f"Error occured while searching {work}: {exception.__class__.__qualname__} {exception}"
         )
     else:
@@ -310,7 +297,7 @@ async def download(args, cover_filepath, work, stats, progress):
                     embed_album_art(work.tmp_cover_filepath, work.audio_filepaths)
                 except Exception as exception:
                     stats["errors"] += 1
-                    logging.getLogger("sacad_r").error(
+                    logging.getLogger("dacad_r").error(
                         f"Error occured while embedding {work}: {exception.__class__.__qualname__} {exception}"
                     )
                 else:
@@ -321,7 +308,7 @@ async def download(args, cover_filepath, work, stats, progress):
                 stats["ok"] += 1
         else:
             stats["no result found"] += 1
-            logging.getLogger("sacad_r").warning(f"Unable to find {work}")
+            logging.getLogger("dacad_r").warning(f"Unable to find {work}")
 
     progress.set_postfix(stats, refresh=False)
     progress.update(1)
@@ -354,7 +341,7 @@ def get_covers(work, args):
             futures = {}
             for i, cur_work in enumerate(work_chunk, i):
                 if cur_work.cover_filepath == EMBEDDED_ALBUM_ART_SYMBOL:
-                    cover_filepath = os.path.join(tmp_dir, f"{i:02}.{args.format.name.lower()}")
+                    cover_filepath = os.path.join(tmp_dir, f"{i:02}.jpg")
                     cur_work.tmp_cover_filepath = cover_filepath
                 else:
                     cover_filepath = cur_work.cover_filepath
@@ -373,17 +360,16 @@ def cl_main():
     """Command line entry point."""
     # parse args
     arg_parser = argparse.ArgumentParser(
-        description=f"SACAD (recursive tool) v{sacad.__version__}.{__doc__}",
+        description=f"DACAD (recursive tool) v{dacad.__version__}.{__doc__}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     arg_parser.add_argument("lib_dir", help="Music library directory to recursively analyze")
-    arg_parser.add_argument("size", type=int, help="Target image size")
     arg_parser.add_argument(
         "cover_pattern",
         help="""Cover image path pattern.
                 {artist} and {album} are replaced by their tag value.
                 You can set an absolute path, otherwise destination directory is relative to the audio files.
-                Use single character '%s' to embed JPEG into audio files."""
+                Use single character '%s' to embed album art into audio files."""
         % (EMBEDDED_ALBUM_ART_SYMBOL),
     )
     arg_parser.add_argument(
@@ -405,30 +391,30 @@ def cl_main():
                 albums to be in the same directory level.
                 WARNING: This will make the initial scan much slower.""",
     )
-    sacad.setup_common_args(arg_parser)
+    dacad.setup_common_args(arg_parser)
     arg_parser.add_argument(
         "-v", "--verbose", action="store_true", default=False, dest="verbose", help="Enable verbose output"
     )
     args = arg_parser.parse_args()
     if args.cover_pattern == EMBEDDED_ALBUM_ART_SYMBOL:
-        args.format = "jpg"
+        args.format = dacad.SUPPORTED_IMG_FORMATS["jpg"]
     else:
         args.format = os.path.splitext(args.cover_pattern)[1][1:].lower()
-    try:
-        args.format = sacad.SUPPORTED_IMG_FORMATS[args.format]
-    except KeyError:
-        print(f"Unable to guess image format from extension, or unknown format: {args.format}")
-        exit(1)
+        try:
+            args.format = dacad.SUPPORTED_IMG_FORMATS[args.format]
+        except KeyError:
+            print(f"Unable to guess image format from extension, or unknown format: {args.format}")
+            exit(1)
     args.cover_sources = tuple(COVER_SOURCE_CLASSES[source] for source in args.cover_sources)
 
     # setup logger
     if not args.verbose:
-        logging.getLogger("sacad_r").setLevel(logging.WARNING)
+        logging.getLogger("dacad_r").setLevel(logging.WARNING)
         logging.getLogger().setLevel(logging.ERROR)
         logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
         fmt = "%(name)s: %(message)s"
     else:
-        logging.getLogger("sacad_r").setLevel(logging.DEBUG)
+        logging.getLogger("dacad_r").setLevel(logging.DEBUG)
         logging.getLogger().setLevel(logging.DEBUG)
         logging.getLogger("asyncio").setLevel(logging.WARNING)
         fmt = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
@@ -455,7 +441,6 @@ def cl_main():
         args.cover_pattern,
         ignore_existing=args.ignore_existing,
         full_scan=args.full_scan,
-        all_formats=args.preserve_format,
     )
     get_covers(work, args)
 

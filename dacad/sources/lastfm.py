@@ -5,8 +5,8 @@ import os.path
 import string
 import xml.etree.ElementTree
 
-from sacad.cover import SUPPORTED_IMG_FORMATS, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
-from sacad.sources.base import MAX_THUMBNAIL_SIZE, CoverSource
+from dacad.cover import SUPPORTED_IMG_FORMATS, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
+from dacad.sources.base import MAX_THUMBNAIL_SIZE, CoverSource
 
 
 class LastFmCoverSourceResult(CoverSourceResult):
@@ -38,8 +38,8 @@ class LastFmCoverSource(CoverSource):
         "mega": (600, 600),
     }  # this is actually between 600 and 900, sometimes even more (ie 1200)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, min_delay_between_accesses=0.1, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(min_delay_between_accesses=0.1, **kwargs)
 
     def getSearchUrl(self, album, artist):
         """See CoverSource.getSearchUrl."""
@@ -73,8 +73,6 @@ class LastFmCoverSource(CoverSource):
         img_elements = xml_root.findall("album/image")
 
         # build results from xml
-        thumbnail_url = None
-        thumbnail_size = None
         for img_element in img_elements:
             img_url = img_element.text
             if not img_url:
@@ -89,14 +87,11 @@ class LastFmCoverSource(CoverSource):
                 size = __class__.SIZES[lfm_size]
             except KeyError:
                 continue
-            if (size[0] <= MAX_THUMBNAIL_SIZE) and ((thumbnail_size is None) or (size[0] < thumbnail_size)):
-                thumbnail_url = img_url
-                thumbnail_size = size[0]
             format = os.path.splitext(img_url)[1][1:].lower()
             format = SUPPORTED_IMG_FORMATS[format]
             results.append(
                 LastFmCoverSourceResult(
-                    img_url, size, format, thumbnail_url=thumbnail_url, source=self, check_metadata=check_metadata
+                    img_url, size, format, source=self, check_metadata=check_metadata
                 )
             )
 

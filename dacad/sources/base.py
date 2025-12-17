@@ -14,8 +14,8 @@ import urllib.parse
 import appdirs
 import web_cache
 
-from sacad import http_helpers, __version__
-from sacad.cover import CoverSourceQuality  # noqa: F401
+from dacad import http_helpers, __version__
+from dacad.cover import CoverSourceQuality  # noqa: F401
 
 MAX_THUMBNAIL_SIZE = 256
 
@@ -25,16 +25,12 @@ class CoverSource(metaclass=abc.ABCMeta):
 
     def __init__(
         self,
-        target_size,
-        size_tolerance_prct,
         *,
         min_delay_between_accesses=0,
         jitter_range_ms=None,
         rate_limited_domains=None,
         allow_cookies=False,
     ):
-        self.target_size = target_size
-        self.size_tolerance_prct = size_tolerance_prct
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.http = http_helpers.Http(
@@ -46,7 +42,7 @@ class CoverSource(metaclass=abc.ABCMeta):
         )
 
         if not hasattr(__class__, "api_cache"):
-            db_filepath = os.path.join(appdirs.user_cache_dir(appname="sacad", appauthor=False), "sacad-cache.sqlite")
+            db_filepath = os.path.join(appdirs.user_cache_dir(appname="dacad", appauthor=False), "dacad-cache.sqlite")
             os.makedirs(os.path.dirname(db_filepath), exist_ok=True)
             day_s = 60 * 60 * 24
             __class__.api_cache = web_cache.WebCache(
@@ -117,34 +113,20 @@ class CoverSource(metaclass=abc.ABCMeta):
 
         # filter
         results_excluded_count = 0
-        reference_only_count = 0
         results_kept = []
         for result in results:
-            if (
-                (result.size[0] + (self.size_tolerance_prct * self.target_size / 100) < self.target_size)
-                or (  # skip too small images
-                    result.size[1] + (self.size_tolerance_prct * self.target_size / 100) < self.target_size
-                )
-                or (result.format is None)
-                or result.needMetadataUpdate()  # unknown format
-            ):  # if still true, it means we failed to grab metadata, so exclude it
-                if result.source_quality.isReference():
-                    # we keep this result just for the reference, it will be excluded from the results
-                    result.is_only_reference = True
-                    results_kept.append(result)
-                    reference_only_count += 1
-                else:
-                    results_excluded_count += 1
+            if (result.format is None) or result.needMetadataUpdate():
+                # unknown format; if still true, it means we failed to grab metadata, so exclude it
+                results_excluded_count += 1
             else:
                 results_kept.append(result)
-        result_kept_count = len(results_kept) - reference_only_count
 
         # log
         self.logger.info(
-            f"Got {result_kept_count} relevant ({results_excluded_count + reference_only_count} excluded) results "
+            f"Got {len(results_kept)} relevant ({results_excluded_count} excluded) results "
             f"from source {self.__class__.__name__!r}"
         )
-        for result in itertools.filterfalse(operator.attrgetter("is_only_reference"), results_kept):
+        for result in results_kept:
             self.logger.debug(
                 "%s %s%s %4dx%4d %s%s"
                 % (
@@ -233,7 +215,7 @@ class CoverSource(metaclass=abc.ABCMeta):
 
     def updateHttpHeaders(self, headers):
         """Add API specific HTTP headers."""
-        headers["User-Agent"] = f"sacad/{__version__}"
+        headers["User-Agent"] = f"dacad/{__version__}"
 
     @abc.abstractmethod
     async def parseResults(self, api_data, *, search_album, search_artist):

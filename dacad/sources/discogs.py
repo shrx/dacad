@@ -3,9 +3,9 @@
 import collections
 import json
 
-from sacad import __version__
-from sacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
-from sacad.sources.base import CoverSource
+from dacad import __version__
+from dacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
+from dacad.sources.base import CoverSource
 
 FUZZY_MODE = False
 
@@ -33,9 +33,9 @@ class DiscogsCoverSource(CoverSource):
     API_KEY = "cGWMOYjQNdWYKXDaxVnR"
     API_SECRET = "NCyWcKHWLAvAreyjDdvVogBzVnzPEEDf"  # not that secret in fact
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         # https://www.discogs.com/developers#page:home,header:home-rate-limiting
-        super().__init__(*args, min_delay_between_accesses=1, **kwargs)
+        super().__init__(min_delay_between_accesses=1, **kwargs)
 
     def getSearchUrl(self, album, artist):
         """See CoverSource.getSearchUrl."""
@@ -50,7 +50,7 @@ class DiscogsCoverSource(CoverSource):
 
     def updateHttpHeaders(self, headers):
         """See CoverSource.updateHttpHeaders."""
-        headers["User-Agent"] = f"sacad/{__version__}"
+        headers["User-Agent"] = f"dacad/{__version__}"
         headers["Accept"] = "application/vnd.discogs.v2.discogs+json"
         headers["Authorization"] = f"Discogs key={__class__.API_KEY}, secret={__class__.API_SECRET}"
 
@@ -62,7 +62,6 @@ class DiscogsCoverSource(CoverSource):
         for rank, release in enumerate(json_data["results"], 1):
             if release["formats"][0]["name"] != "CD":
                 continue
-            thumbnail_url = release["thumb"]
             img_url = release["cover_image"]
             url_tokens = img_url.split("/")
             url_tokens.reverse()
@@ -75,7 +74,6 @@ class DiscogsCoverSource(CoverSource):
                 img_url,
                 (img_width, img_height),
                 CoverImageFormat.JPEG,
-                thumbnail_url=thumbnail_url,
                 source=self,
                 rank=rank,
                 check_metadata=CoverImageMetadata.NONE,

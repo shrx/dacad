@@ -9,7 +9,7 @@ import urllib.parse
 import aiohttp
 import appdirs
 
-from sacad import rate_watcher, redo
+from dacad import rate_watcher, redo
 
 
 def aiohttp_socket_timeout(socket_timeout_s):
@@ -40,7 +40,7 @@ class Http:
         self.allow_session_cookies = allow_session_cookies
         self.session = None
         self.watcher_db_filepath = os.path.join(
-            appdirs.user_cache_dir(appname="sacad", appauthor=False), "rate_watcher.sqlite"
+            appdirs.user_cache_dir(appname="dacad", appauthor=False), "rate_watcher.sqlite"
         )
         self.min_delay_between_accesses = min_delay_between_accesses
         self.jitter_range_ms = jitter_range_ms

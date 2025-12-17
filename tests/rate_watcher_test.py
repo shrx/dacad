@@ -7,7 +7,7 @@ import tempfile
 import time
 import unittest
 
-from sacad.rate_watcher import AccessRateWatcher
+from dacad.rate_watcher import AccessRateWatcher
 
 from . import sched_and_run
 

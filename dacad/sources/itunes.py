@@ -3,9 +3,9 @@
 import collections
 import json
 
-from sacad.cover import SUPPORTED_IMG_FORMATS as EXTENSION_FORMAT
-from sacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
-from sacad.sources.base import CoverSource
+from dacad.cover import SUPPORTED_IMG_FORMATS as EXTENSION_FORMAT
+from dacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
+from dacad.sources.base import CoverSource
 
 
 class ItunesCoverSourceResult(CoverSourceResult):
@@ -24,9 +24,9 @@ class ItunesCoverSource(CoverSource):
 
     SEARCH_URL = "https://itunes.apple.com/search"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         # https://stackoverflow.com/questions/12596300/itunes-search-api-rate-limit
-        super().__init__(*args, min_delay_between_accesses=3, **kwargs)
+        super().__init__(min_delay_between_accesses=3, **kwargs)
 
     def getSearchUrl(self, album, artist):
         """See CoverSource.getSearchUrl."""
@@ -46,7 +46,6 @@ class ItunesCoverSource(CoverSource):
                 search_artist != self.processArtistString(result["artistName"])
             ):
                 continue
-            thumbnail_url = result["artworkUrl60"]
             base_img_url = result["artworkUrl60"].rsplit("/", 1)[0]
             url_found = False
             for img_size in (5000, 1200, 600):
@@ -66,7 +65,6 @@ class ItunesCoverSource(CoverSource):
                 img_url,
                 (img_size, img_size),
                 img_format,
-                thumbnail_url=thumbnail_url,
                 source=self,
                 rank=rank,
                 check_metadata=CoverImageMetadata.NONE,

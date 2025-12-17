@@ -4,8 +4,8 @@ import collections
 import json
 import operator
 
-from sacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
-from sacad.sources.base import CoverSource
+from dacad.cover import CoverImageFormat, CoverImageMetadata, CoverSourceQuality, CoverSourceResult
+from dacad.sources.base import CoverSource
 
 
 class DeezerCoverSourceResult(CoverSourceResult):
@@ -35,8 +35,8 @@ class DeezerCoverSource(CoverSource):
         "cover_xl": (1000, 1000),
     }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, min_delay_between_accesses=0.1, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(min_delay_between_accesses=0.1, **kwargs)
 
     def getSearchUrl(self, album, artist):
         """See CoverSource.getSearchUrl."""
@@ -80,13 +80,11 @@ class DeezerCoverSource(CoverSource):
                 img_url = album[key]
                 if img_url is None:
                     continue
-                thumbnail_url = album["cover_small"]
                 results.append(
                     DeezerCoverSourceResult(
                         img_url,
                         size,
                         CoverImageFormat.JPEG,
-                        thumbnail_url=thumbnail_url,
                         source=self,
                         rank=rank,
                         check_metadata=CoverImageMetadata.NONE,

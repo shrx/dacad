@@ -15,7 +15,7 @@ import PIL.Image
 import requests
 import web_cache
 
-import sacad
+import dacad
 
 web_cache.DISABLE_PERSISTENT_CACHING = True
 
@@ -70,7 +70,7 @@ def sched_and_run(coroutine, delay=0):
 
 
 @unittest.skipUnless(is_internet_reachable(), "Need Internet access")
-class TestSacad(unittest.TestCase):
+class TestDacad(unittest.TestCase):
     """Test suite for main module."""
 
     @staticmethod
@@ -79,163 +79,110 @@ class TestSacad(unittest.TestCase):
         with open(img_filepath, "rb") as img_file:
             img = PIL.Image.open(img_file)
             format = img.format.lower()
-            format = sacad.SUPPORTED_IMG_FORMATS[format]
+            format = dacad.SUPPORTED_IMG_FORMATS[format]
             width, height = img.size
         return format, width, height
 
     def test_getMasterOfPuppetsCover(self):
-        """Search and download cover for 'Master of Puppets' with different parameters."""
-        for format in sacad.cover.CoverImageFormat:
-            for size in (300, 600, 1200):
-                for size_tolerance in (0, 25, 50):
-                    with self.subTest(format=format, size=size, size_tolerance=size_tolerance):
-                        with sacad.mkstemp_ctx.mkstemp(
-                            prefix="sacad_test_", suffix=f".{format.name.lower()}"
-                        ) as tmp_filepath:
-                            coroutine = sacad.search_and_download(
-                                "Master of Puppets",
-                                "Metallica",
-                                format,
-                                size,
-                                tmp_filepath,
-                                size_tolerance_prct=size_tolerance,
-                            )
-                            sched_and_run(coroutine, delay=0.5)
-                            if os.path.getsize(tmp_filepath):
-                                out_format, out_width, out_height = __class__.getImgInfo(tmp_filepath)
-                                self.assertEqual(out_format, format)
-                                self.assertLessEqual(out_width, size * (100 + size_tolerance) / 100)
-                                self.assertGreaterEqual(out_width, size * (100 - size_tolerance) / 100)
-                                self.assertLessEqual(out_height, size * (100 + size_tolerance) / 100)
-                                self.assertGreaterEqual(out_height, size * (100 - size_tolerance) / 100)
-                            elif size < 1200:
-                                self.fail("No result")
+        """Search and download cover for 'Master of Puppets'."""
+        for format in dacad.cover.CoverImageFormat:
+            with self.subTest(format=format):
+                with dacad.mkstemp_ctx.mkstemp(
+                    prefix="dacad_test_", suffix=f".{format.name.lower()}"
+                ) as tmp_filepath:
+                    coroutine = dacad.search_and_download(
+                        "Master of Puppets",
+                        "Metallica",
+                        format,
+                        tmp_filepath,
+                    )
+                    sched_and_run(coroutine, delay=0.5)
+                    if os.path.getsize(tmp_filepath):
+                        out_format, out_width, out_height = __class__.getImgInfo(tmp_filepath)
+                        self.assertEqual(out_format, format)
+                        self.assertGreater(out_width, 0)
+                        self.assertGreater(out_height, 0)
+                    else:
+                        self.fail("No result")
 
     @unittest.skipIf(os.getenv("CI") is not None, "Test is not reliable on CI servers")
     def test_getImageUrlMetadata(self):
         """Download the beginning of image files to guess their format and resolution."""
         refs = {
-            "https://upload.wikimedia.org/wikipedia/commons/b/b1/New_view_of_the_Pillars_of_Creation_%E2%80%94_infrared_Heic1501b.jpg": (  # noqa
-                sacad.cover.CoverImageFormat.JPEG,
-                (3249, 3045),
-                4,
+            "https://raw.githubusercontent.com/python-pillow/Pillow/main/Tests/images/hopper.jpg": (
+                dacad.cover.CoverImageFormat.JPEG,
+                (128, 128),
+                1,
             ),
             "http://img2-ak.lst.fm/i/u/55ad95c53e6043e3b150ba8a0a3b20a1.png": (
-                sacad.cover.CoverImageFormat.PNG,
+                dacad.cover.CoverImageFormat.PNG,
                 (600, 600),
                 1,
             ),
         }
         for url, (ref_fmt, ref_size, block_read) in refs.items():
-            sacad.CoverSourceResult.guessImageMetadataFromData = unittest.mock.Mock(
-                wraps=sacad.CoverSourceResult.guessImageMetadataFromData
+            dacad.CoverSourceResult.guessImageMetadataFromData = unittest.mock.Mock(
+                wraps=dacad.CoverSourceResult.guessImageMetadataFromData
             )
             source = unittest.mock.Mock()
-            source.http = sacad.http_helpers.Http()
-            cover = sacad.CoverSourceResult(
+            source.http = dacad.http_helpers.Http()
+            source.updateHttpHeaders = lambda headers: headers.update({"User-Agent": f"dacad/{dacad.__version__}"})
+            cover = dacad.CoverSourceResult(
                 url,
                 None,
                 None,
                 source=source,
-                thumbnail_url=None,
                 source_quality=0,
-                check_metadata=sacad.cover.CoverImageMetadata.ALL,
+                check_metadata=dacad.cover.CoverImageMetadata.ALL,
             )
             coroutine = cover.updateImageMetadata()
             sched_and_run(coroutine, delay=0.5)
             self.assertEqual(cover.size, ref_size)
             self.assertEqual(cover.format, ref_fmt)
-            self.assertGreaterEqual(sacad.CoverSourceResult.guessImageMetadataFromData.call_count, 0)
-            self.assertLessEqual(sacad.CoverSourceResult.guessImageMetadataFromData.call_count, block_read)
-
-    def test_compareImageSignatures(self):
-        """Compare images using their signatures."""
-        urls = (
-            "https://is4-ssl.mzstatic.com/image/thumb/Features6/v4/ee/bd/69/eebd6962-9b25-c177-c175-b3b3e641a29d/dj.edqjfvzd.jpg/828x0w.jpg",  # noqa: E501
-            "http://www.jesus-is-savior.com/Evils%20in%20America/Rock-n-Roll/highway_to_hell-large.jpg",
-            "https://images.recordsale.de/600/600/acdc_highway-to-hell(red-labels)_11.jpg",
-        )
-        img_sig = {}
-        for i, url in enumerate(urls):
-            img_data = download(url)
-            img_sig[i] = sacad.CoverSourceResult.computeImgSignature(img_data)
-        self.assertTrue(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[0], img_sig[1]))
-        self.assertTrue(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[1], img_sig[0]))
-        self.assertFalse(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[0], img_sig[2]))
-        self.assertFalse(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[1], img_sig[2]))
-        self.assertFalse(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[2], img_sig[0]))
-        self.assertFalse(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[2], img_sig[1]))
-
-        not_similar_urls = (
-            (
-                "https://images-na.ssl-images-amazon.com/images/I/91euo%2BzpKEL._SL1500_.jpg",
-                "https://lastfm.freetls.fastly.net/i/u/300x300/ae3c6b3e81cfd5f5fec71285955d63eb.png",
-            ),
-            (
-                "https://lastfm.freetls.fastly.net/i/u/300x300/306101fec6ce447e941d2aaca22777c1.png",
-                "https://m.media-amazon.com/images/I/816CGCFeXKL.jpg",
-            ),
-        )
-        for urls in not_similar_urls:
-            img_sig = {}
-            for i, url in enumerate(urls):
-                img_data = download(url)
-                img_sig[i] = sacad.CoverSourceResult.computeImgSignature(img_data)
-            self.assertFalse(sacad.CoverSourceResult.areImageSigsSimilar(img_sig[0], img_sig[1]))
+            self.assertGreaterEqual(dacad.CoverSourceResult.guessImageMetadataFromData.call_count, 0)
+            self.assertLessEqual(dacad.CoverSourceResult.guessImageMetadataFromData.call_count, block_read)
 
     @unittest.skipIf(os.getenv("CI") is not None, "Test is not reliable on CI servers")
     def test_coverSources(self):
-        """Check all sources return valid results with different parameters."""
-        for size in range(300, 1200 + 1, 300):
-            source_args = (size, 0)
-            sources = [
-                sacad.sources.ItunesCoverSource(*source_args),
-                sacad.sources.LastFmCoverSource(*source_args),
-                sacad.sources.DeezerCoverSource(*source_args),
-                sacad.sources.DiscogsCoverSource(*source_args),
-            ]
-            for artist, album in zip(("Michael Jackson", "Björk"), ("Thriller", "Vespertine")):
-                for source in sources:
-                    with self.subTest(size=size, source=source, artist=artist, album=album):
-                        coroutine = source.search(album, artist)
-                        results = sched_and_run(coroutine, delay=0.5)
-                        coroutine = sacad.CoverSourceResult.preProcessForComparison(results, size, 0)
-                        results = sched_and_run(coroutine, delay=0.5)
-                        if not (
-                            (
-                                (size > 500)
-                                and isinstance(
-                                    source, (sacad.sources.LastFmCoverSource, sacad.sources.DiscogsCoverSource)
-                                )
-                            )
-                            or ((size > 1000) and isinstance(source, sacad.sources.DeezerCoverSource))
-                        ):
-                            self.assertGreaterEqual(len(results), 1)
+        """Check all sources return valid results."""
+        sources = [
+            dacad.sources.ItunesCoverSource(),
+            dacad.sources.LastFmCoverSource(),
+            dacad.sources.DeezerCoverSource(),
+            dacad.sources.DiscogsCoverSource(),
+        ]
+        for artist, album in zip(("Michael Jackson", "Björk"), ("Thriller", "Vespertine")):
+            for source in sources:
+                with self.subTest(source=source, artist=artist, album=album):
+                    coroutine = source.search(album, artist)
+                    results = sched_and_run(coroutine, delay=0.5)
+                    coroutine = dacad.CoverSourceResult.preProcessForComparison(results)
+                    results = sched_and_run(coroutine, delay=0.5)
+                    self.assertGreaterEqual(len(results), 1)
 
-                        for result in results:
-                            self.assertTrue(result.urls)
-                            self.assertIn(result.format, sacad.cover.CoverImageFormat)
-                            self.assertGreaterEqual(result.size[0], size)
+                    for result in results:
+                        self.assertTrue(result.urls)
+                        self.assertIn(result.format, dacad.cover.CoverImageFormat)
+                        self.assertGreater(result.size[0], 0)
 
         # check last.fm handling of queries with punctuation
         for artist, album in zip(("Megadeth", "Royal City"), ("So Far, So Good, So What?", "Little Heart's Ease")):
-            size = 300
-            source = sacad.sources.LastFmCoverSource(size, 0)
+            source = dacad.sources.LastFmCoverSource()
             coroutine = source.search(album, artist)
             results = sched_and_run(coroutine, delay=0.5)
             self.assertGreaterEqual(len(results), 1)
 
     def test_unaccentuate(self):
         """Check unaccentuate remove accents."""
-        self.assertEqual(sacad.sources.base.CoverSource.unaccentuate("EéeAàaOöoIïi"), "EeeAaaOooIii")
+        self.assertEqual(dacad.sources.base.CoverSource.unaccentuate("EéeAàaOöoIïi"), "EeeAaaOooIii")
 
     def test_is_square(self):
         """Check is_square identify squares."""
         for x in range(1, 100):
             if x in (1, 4, 9, 16, 25, 36, 49, 64, 81):
-                self.assertTrue(sacad.cover.is_square(x), x)
+                self.assertTrue(dacad.cover.is_square(x), x)
             else:
-                self.assertFalse(sacad.cover.is_square(x), x)
+                self.assertFalse(dacad.cover.is_square(x), x)
 
 
 # logging

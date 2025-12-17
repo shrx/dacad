@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-"""Smart Automatic Cover Art Downloader : search and download music album covers."""
+"""Dumb Automatic Cover Art Downloader : search and download music album covers."""
 
 __version__ = "2.8.3"
 __author__ = "desbma"
+__maintainer__ = "shrx"
 __license__ = "MPL 2.0"
 
 import argparse
@@ -14,16 +15,13 @@ import logging
 import os
 from typing import Any, Optional, Sequence
 
-from sacad import colored_logging, sources
-from sacad.cover import (
-    HAS_JPEGOPTIM,
-    HAS_OPTIPNG,
-    HAS_OXIPNG,
+from dacad import colored_logging, sources
+from dacad.cover import (
     SUPPORTED_IMG_FORMATS,
     CoverImageFormat,
     CoverSourceResult,
 )
-from sacad.sources.base import CoverSource
+from dacad.sources.base import CoverSource
 
 COVER_SOURCE_CLASSES = {
     m[0][: -len(CoverSource.__name__)].lower(): m[1]
@@ -35,23 +33,18 @@ async def search_and_download(
     album: str,
     artist: str,
     format: CoverImageFormat,
-    size: int,
     out_filepath: str,
     *,
-    size_tolerance_prct: int,
     source_classes: Optional[Sequence[Any]] = None,
-    preserve_format: bool = False,
-    convert_progressive_jpeg: bool = False,
 ) -> bool:
     """Search and download a cover, return True if success, False instead."""
     logger = logging.getLogger("Main")
 
     # register sources
-    source_args = (size, size_tolerance_prct)
     if source_classes is None:
         source_classes = tuple(COVER_SOURCE_CLASSES.values())
     assert source_classes is not None  # makes MyPy chill
-    cover_sources = [cls(*source_args) for cls in source_classes]
+    cover_sources = [cls() for cls in source_classes]
 
     # schedule search work
     search_futures = []
@@ -70,16 +63,10 @@ async def search_and_download(
         results.extend(source_results)
 
     # sort results
-    results = await CoverSourceResult.preProcessForComparison(results, size, size_tolerance_prct)
+    results = await CoverSourceResult.preProcessForComparison(results)
     results.sort(
         reverse=True,
-        key=functools.cmp_to_key(
-            functools.partial(
-                CoverSourceResult.compare,
-                target_size=size,
-                size_tolerance_prct=size_tolerance_prct,
-            )
-        ),
+        key=functools.cmp_to_key(CoverSourceResult.compare),
     )
     if not results:
         logger.info("No results")
@@ -91,14 +78,7 @@ async def search_and_download(
     done = False
     for result in results:
         try:
-            await result.get(
-                format,
-                size,
-                size_tolerance_prct,
-                out_filepath,
-                preserve_format=preserve_format,
-                convert_progressive_jpeg=convert_progressive_jpeg,
-            )
+            await result.get(format, out_filepath)
         except Exception as e:
             logger.warning(f"Download of {result} failed: {e.__class__.__qualname__} {e}")
             continue
@@ -116,17 +96,7 @@ async def search_and_download(
 
 
 def setup_common_args(arg_parser: argparse.ArgumentParser) -> None:
-    """Set up command line arguments shared between sacad and sacad_r."""
-    arg_parser.add_argument(
-        "-t",
-        "--size-tolerance",
-        type=int,
-        default=25,
-        dest="size_tolerance_prct",
-        help="""Tolerate this percentage of size difference with the target size.
-                Note that covers with size above or close to the target size will still be preferred
-                if available""",
-    )
+    """Set up command line arguments shared between dacad and dacad_r."""
     arg_parser.add_argument(
         "-s",
         "--cover-sources",
@@ -135,33 +105,19 @@ def setup_common_args(arg_parser: argparse.ArgumentParser) -> None:
         nargs="+",
         help="""Cover sources to use, if not set use all of them.
                 This option should either be the last one in the command line, or be passed immediately
-                before positional arguments and followed by '--' (ie. 'sacad -s source1 source2 -- artist album size out_filepath').""",
-    )
-    arg_parser.add_argument(
-        "-p",
-        "--preserve-format",
-        action="store_true",
-        default=False,
-        help="Preserve source image format if possible. Target format will still be prefered when sorting results.",
-    )
-    arg_parser.add_argument(
-        "--convert-progressive-jpeg",
-        action="store_true",
-        default=False,
-        help="Convert progressive JPEG to baseline if needed. May result in bigger files and loss of quality.",
+                before positional arguments and followed by '--' (ie. 'dacad -s source1 source2 -- artist album out_filepath').""",
     )
 
 
 def cl_main() -> None:
-    """Command line entry point for sacad_r."""
+    """Command line entry point for dacad_r."""
     # parse args
     arg_parser = argparse.ArgumentParser(
-        description=f"SACAD v{__version__}. Search and download an album cover.",
+        description=f"DACAD v{__version__}. Search and download an album cover.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     arg_parser.add_argument("artist", help="Artist to search for")
     arg_parser.add_argument("album", help="Album to search for")
-    arg_parser.add_argument("size", type=int, help="Target image size")
     arg_parser.add_argument("out_filepath", help="Output image filepath")
     setup_common_args(arg_parser)
     arg_parser.add_argument(
@@ -202,23 +158,13 @@ def cl_main() -> None:
     else:
         logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
 
-    # display warning if optipng/oxipng or jpegoptim are missing
-    if not HAS_JPEGOPTIM:
-        logging.getLogger("Main").warning("jpegoptim could not be found, JPEG crunching will be disabled")
-    if not (HAS_OPTIPNG or HAS_OXIPNG):
-        logging.getLogger("Main").warning("optipng or oxipng could not be found, PNG crunching will be disabled")
-
     # search and download
     coroutine = search_and_download(
         args.album,
         args.artist,
         args.format,
-        args.size,
         args.out_filepath,
-        size_tolerance_prct=args.size_tolerance_prct,
         source_classes=args.cover_sources,
-        preserve_format=args.preserve_format,
-        convert_progressive_jpeg=args.convert_progressive_jpeg,
     )
     asyncio.run(coroutine)
 
