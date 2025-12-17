@@ -2,7 +2,7 @@
 
 """Dumb Automatic Cover Art Downloader : search and download music album covers."""
 
-__version__ = "2.8.3"
+__version__ = "2.8.4"
 __author__ = "desbma"
 __maintainer__ = "shrx"
 __license__ = "MPL 2.0"
