@@ -70,7 +70,7 @@ class Work:
         )
 
 
-def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, full_scan=False):
+def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, ignore_embedded=False, full_scan=False):
     """Recursively analyze library, and return a list of work."""
     work = []
     stats = collections.OrderedDict((k, 0) for k in ("files", "albums", "missing covers", "errors"))
@@ -85,6 +85,7 @@ def analyze_lib(lib_dir, cover_pattern, *, ignore_existing=False, full_scan=Fals
                 rel_filepaths,
                 cover_pattern,
                 ignore_existing=ignore_existing,
+                ignore_embedded=ignore_embedded,
                 full_scan=full_scan,
             )
             progress.set_postfix(stats, refresh=False)
@@ -190,7 +191,7 @@ def pattern_to_filepath(pattern, parent_dir, metadata):
 
 
 def analyze_dir(
-    stats, parent_dir, rel_filepaths, cover_pattern, *, ignore_existing=False, full_scan=False
+    stats, parent_dir, rel_filepaths, cover_pattern, *, ignore_existing=False, ignore_embedded=False, full_scan=False
 ):
     """Analyze a directory (non recursively) and return a list of Work objects."""
     r = []
@@ -221,7 +222,7 @@ def analyze_dir(
         # add work item if needed
         if cover_pattern != EMBEDDED_ALBUM_ART_SYMBOL:
             cover_filepath = pattern_to_filepath(cover_pattern, parent_dir, metadata)
-            missing = ignore_existing or (not os.path.isfile(cover_filepath))
+            missing = ignore_existing or (not os.path.isfile(cover_filepath) and (ignore_embedded or not metadata.has_embedded_cover))
         else:
             cover_filepath = EMBEDDED_ALBUM_ART_SYMBOL
             missing = (not metadata.has_embedded_cover) or ignore_existing
@@ -380,6 +381,13 @@ def cl_main():
         help="Ignore existing covers and force search and download for all files",
     )
     arg_parser.add_argument(
+        "-e",
+        "--ignore-embedded",
+        action="store_true",
+        default=False,
+        help="Ignore embedded album art and download standalone cover files even if audio files already have embedded covers",
+    )
+    arg_parser.add_argument(
         "-f",
         "--full-scan",
         action="store_true",
@@ -440,6 +448,7 @@ def cl_main():
         args.lib_dir,
         args.cover_pattern,
         ignore_existing=args.ignore_existing,
+        ignore_embedded=args.ignore_embedded,
         full_scan=args.full_scan,
     )
     get_covers(work, args)

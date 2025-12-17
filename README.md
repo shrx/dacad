@@ -31,6 +31,7 @@ DACAD also provides a second command line tool, `dacad_r`, to scan a music libra
 
 - Automatically finds and downloads the highest resolution cover available
 - Supports JPEG and PNG formats
+- Detects embedded album art in audio files to avoid redundant downloads
 - Customizable output: save image along with the audio files / in a different directory named by artist/album / embed cover in audio files...
 - Currently support the following cover sources:
   - Deezer
@@ -49,7 +50,7 @@ DACAD is designed to be robust and be executed in batch of thousands of queries:
 - Process several queries simultaneously (using [asyncio](https://docs.python.org/3/library/asyncio.html)), to speed up processing
 - Automatically reuse TCP connections (HTTP Keep-Alive), for better network performance
 - Automatically retry failed HTTP requests
-- Music library scan supports all common audio formats (MP3, AAC, Vorbis, FLAC..)
+- Music library scan supports all common audio formats (MP3, AAC, Vorbis, FLAC..) and detects embedded album art in ID3, Vorbis, MP4, and APEv2 tags
 - Cover sources page or API changes are quickly detected, thanks to high test coverage, and DACAD is quickly updated accordingly
 
 ## Installation
@@ -70,9 +71,37 @@ Run `dacad -h` / `dacad_r -h` to get full command line reference.
 
 ### Examples
 
-To download the cover of _Master of Puppets_ from _Metallica_, to the file `AlbumArt.jpg`: `dacad "metallica" "master of puppets" AlbumArt.jpg`.
+#### dacad (single cover download)
 
-To download covers for your library: `dacad_r library_directory AlbumArt.jpg`.
+To download the cover of _Master of Puppets_ from _Metallica_, to the file `AlbumArt.jpg`:
+
+```bash
+dacad "metallica" "master of puppets" AlbumArt.jpg
+```
+
+#### dacad_r (recursive library scanning)
+
+To download covers for your library:
+
+```bash
+dacad_r library_directory AlbumArt.jpg
+```
+
+By default, `dacad_r` will skip downloading standalone cover files if:
+- The standalone file already exists, OR
+- The audio files already have embedded album art
+
+To download standalone covers even when embedded art exists:
+
+```bash
+dacad_r -e library_directory AlbumArt.jpg
+```
+
+To force re-download all covers (ignoring both existing files and embedded art):
+
+```bash
+dacad_r -i library_directory AlbumArt.jpg
+```
 
 ## Limitations
 
